@@ -1,0 +1,29 @@
+# Haskell
+dist
+dist-*
+cabal-dev
+*~
+*.o
+*.hi
+*.dyn_o
+*.dyn_hi
+*.prof
+*.aux
+*.hp
+*.eventlog
+*.i
+.hsenv
+.cabal-sandbox/
+cabal.sandbox.config
+cabal.project.local
+cabal.project.local~
+.HTF/
+.ghc.environment.*
+.stack-work/
+
+# IDEs
+.idea/
+.vscode/
+
+# OS Artifacts
+.DS_Store

@@ -5,14 +5,12 @@
 module Agent (repeatAgent, sequentialAgent, loopAgent, quitAfterNTerminator) where
 
 import Data.Foldable (traverse_)
-import qualified Data.Text as Text
 import Types
 
 appendOutput :: Agent ctx Chat -> Agent ctx ()
 appendOutput a = do
   result <- a
-  -- appending is slow for a list, in the future use Data.Sequence
-  modify $ \s -> if Text.null result then s else s {chats = chats s ++ [result]}
+  modify $ \s -> s {chats = chats s ++ [result]}
 
 sequentialAgent :: [Agent ctx Chat] -> Agent ctx Chat
 sequentialAgent agents = do

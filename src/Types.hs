@@ -3,7 +3,9 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Types
-  ( Chat,
+  ( Chat (..),
+    FunctionCall (..),
+    FunctionCallParams (..),
     Session (..),
     Agent (..),
     module Control.Monad.Error.Class,
@@ -15,9 +17,26 @@ where
 import Control.Monad.Error.Class (MonadError (catchError, throwError))
 import Control.Monad.IO.Class
 import Control.Monad.State.Class
+import Data.Aeson (Value)
 import qualified Data.Text as Text
 
-type Chat = Text.Text
+data Chat
+  = SystemMessage Text.Text
+  | UserMessage Text.Text
+  | AssistantMessage {text :: Maybe Text.Text, functionCalls :: [FunctionCall]}
+  deriving (Show)
+
+data FunctionCall = FunctionCall
+  { id :: String,
+    function :: FunctionCallParams
+  }
+  deriving (Show)
+
+data FunctionCallParams = FunctionCallParams
+  { name :: String,
+    arguments :: Value
+  }
+  deriving (Show)
 
 data Session a = Session {chats :: [Chat], context :: a}
 

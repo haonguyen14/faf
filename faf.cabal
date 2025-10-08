@@ -75,9 +75,10 @@ library
         text >= 2.0.2,
         openai >= 0.1,
         servant-client >= 0.20.3,
+        aeson,
         vector,
         mtl,
-        transformers
+        transformers,
 
     -- Directories containing source files.
     hs-source-dirs:   src
@@ -104,6 +105,8 @@ executable faf
         text >= 2.0.2,
         openai >= 0.1,
         servant-client >= 0.20.3,
+        aeson,
+        vector,
         transformers,
         faf
 

@@ -1,33 +1,45 @@
+-- Language Extensions
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ExistentialQuantification #-}
 
+-- Module Definition
 module Types
   ( Chat (..),
     FunctionCall (..),
     FunctionCallParams (..),
     Session (..),
+    LLMAgentContext (..),
     Agent (..),
+    Tool (..),
+    AnyTool (..),
     module Control.Monad.Error.Class,
     module Control.Monad.State.Class,
     module Control.Monad.IO.Class,
   )
 where
 
+-- Imports
 import Control.Monad.Error.Class (MonadError (catchError, throwError))
 import Control.Monad.IO.Class
 import Control.Monad.State.Class
-import Data.Aeson (Value)
 import qualified Data.Text as Text
+import Data.Aeson.Types
+import OpenAI.V1.Models
+import Servant.Client
 
+-- Core Data Types
 data Chat
   = SystemMessage Text.Text
   | UserMessage Text.Text
   | AssistantMessage {text :: Maybe Text.Text, functionCalls :: [FunctionCall]}
+  | ToolMessage {id :: FunctionCallId, response :: Maybe Value}
   deriving (Show)
 
 data FunctionCall = FunctionCall
-  { id :: String,
+  { id :: FunctionCallId,
     function :: FunctionCallParams
   }
   deriving (Show)
@@ -38,10 +50,40 @@ data FunctionCallParams = FunctionCallParams
   }
   deriving (Show)
 
+type FunctionCallId = String
+
+-- Session Management
 data Session a = Session {chats :: [Chat], context :: a}
 
+-- | A tool that the LLM can use.
+data Tool a b = Tool
+  { name :: String,
+    description :: String,
+    parameters :: Value,
+    execute :: a -> Agent LLMAgentContext b
+  }
+
+data AnyTool = forall a b. (FromJSON a, ToJSON b) => AnyTool (Tool a b)
+
+-- | The context required for an LLM agent.
+data LLMAgentContext = LLMAgentContext
+  { -- | The OpenAI model to use.
+    openAIModel :: Model,
+    -- | The OpenAI API key.
+    apiKey :: String,
+    -- | The Servant client environment.
+    clientEnv :: ClientEnv,
+    -- | A system prompt that guides the LLM's behavior.
+    systemPrompt :: Text.Text,
+    -- | A list of tools that the LLM can use.
+    tools :: [AnyTool]
+  }
+
+
+-- Agent Monad
 newtype Agent ctx a = Agent {runAgent :: Session ctx -> IO (Either String (a, Session ctx))}
 
+-- Monad Instances
 instance Functor (Agent ctx) where
   fmap :: (a -> b) -> Agent ctx a -> Agent ctx b
   fmap f agent = Agent $ \s -> do

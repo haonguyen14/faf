@@ -2,15 +2,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Agent (repeatAgent, sequentialAgent, loopAgent, quitAfterNTerminator) where
+module Agent (repeatAgent, sequentialAgent, loopAgent, quitAfterNTerminator, appendOutput) where
 
 import Data.Foldable (traverse_)
 import Types
 
-appendOutput :: Agent ctx Chat -> Agent ctx ()
+appendOutput :: Agent ctx Chat -> Agent ctx Chat
 appendOutput a = do
   result <- a
   modify $ \s -> s {chats = chats s ++ [result]}
+  return result
 
 sequentialAgent :: [Agent ctx Chat] -> Agent ctx Chat
 sequentialAgent agents = do

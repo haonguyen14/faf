@@ -1,4 +1,5 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -6,48 +7,27 @@
 
 module LLM
   ( llmSingleTurnAgent,
-    Tool (..),
+    llmSingleTurnAgentWithToolExecution,
     LLMAgentContext (..),
   )
 where
 
+import Agent
 import Control.Exception (SomeException, try)
 import Control.Monad.Except
 import Control.Monad.Trans.Except
 import Data.Aeson
 import Data.Aeson.Text (encodeToLazyText)
+import Data.Foldable (find)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TLE
 import qualified Data.Vector as V
 import OpenAI.V1
 import qualified OpenAI.V1.Chat.Completions as C
-import OpenAI.V1.Models (Model)
 import qualified OpenAI.V1.Tool as T
 import OpenAI.V1.ToolCall as TC
-import Servant.Client (ClientEnv)
 import Types
-
--- | A tool that the LLM can use.
-data Tool = FunctionTool
-  { name :: String,
-    description :: String,
-    parameters :: Value
-  }
-
--- | The context required for an LLM agent.
-data LLMAgentContext = LLMAgentContext
-  { -- | The OpenAI model to use.
-    openAIModel :: Model,
-    -- | The OpenAI API key.
-    apiKey :: String,
-    -- | The Servant client environment.
-    clientEnv :: ClientEnv,
-    -- | A system prompt that guides the LLM's behavior.
-    systemPrompt :: Text.Text,
-    -- | A list of tools that the LLM can use.
-    tools :: [Tool]
-  }
 
 -- | Converts a `FunctionCall` to an OpenAI `ToolCall`.
 domainToOpenAIToolCall :: FunctionCall -> ToolCall
@@ -80,10 +60,14 @@ domainToOpenAIMessage (AssistantMessage {text = maybeText, functionCalls = fs}) 
       refusal = Nothing
       assistant_audio = Nothing
    in C.Assistant {assistant_content, name, refusal, assistant_audio, tool_calls}
+domainToOpenAIMessage (ToolMessage {id = tcId, response = tcResponse}) =
+  let content = [C.Text {text = maybe Text.empty (TL.toStrict . encodeToLazyText) tcResponse}]
+      tool_call_id = Text.pack tcId
+   in C.Tool {tool_call_id, content}
 
 -- | Converts a `Tool` to an OpenAI `Tool`.
-domainToOpenAITool :: Tool -> T.Tool
-domainToOpenAITool FunctionTool {name, description, parameters} =
+domainToOpenAITool :: AnyTool -> T.Tool
+domainToOpenAITool (AnyTool (Tool {name, description, parameters})) =
   T.Tool_Function
     { T.function =
         T.Function
@@ -117,7 +101,7 @@ openAIMessageToDomainChat (C.Assistant {assistant_content = text, tool_calls}) =
         Nothing -> []
         Just fs -> V.toList $ fmap openAIToDomainToolCall fs
    in Right $ AssistantMessage {text, functionCalls}
-openAIMessageToDomainChat (C.Tool {}) = Left "Tool messages are not supported yet"
+openAIMessageToDomainChat (C.Tool {}) = Left "OpenAI tool response to domain chat not implemented"
 
 -- | Creates a chat completion request for the OpenAI API.
 createChatCompletionRequest :: LLMAgentContext -> [Chat] -> C.CreateChatCompletion
@@ -159,3 +143,26 @@ llmSingleTurnAgent = do
   Session {chats, context} <- get
   result <- liftIO $ makeLLMRequest context chats
   liftEither result
+
+executeFunctionAgent :: FunctionCall -> Agent LLMAgentContext Chat
+executeFunctionAgent FunctionCall {id = fcId, function = f} = do
+  Session {context} <- get
+
+  let FunctionCallParams {name = toolName, arguments = toolArgs} = f
+      toolList = tools context
+
+  case find (\(AnyTool (Tool {name})) -> name == toolName) toolList of
+    Nothing -> throwError $ "Tool not found " ++ toolName
+    Just (AnyTool Tool {execute}) -> do
+      case fromJSON toolArgs of
+        Error err -> throwError $ "Failed to parse arguments for tool " ++ toolName ++ ": " ++ err
+        Success args -> do
+          result <- execute args
+          return $ ToolMessage {id = fcId, response = Just (toJSON result)}
+
+llmSingleTurnAgentWithToolExecution :: Agent LLMAgentContext Chat
+llmSingleTurnAgentWithToolExecution = do
+  resp <- appendOutput llmSingleTurnAgent
+  case resp of
+    AssistantMessage {functionCalls = fs@(f : _)} -> sequentialAgent . fmap executeFunctionAgent $ fs
+    _ -> return resp

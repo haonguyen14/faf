@@ -55,11 +55,14 @@ domainToOpenAIMessage (AssistantMessage {text = maybeText, functionCalls = fs}) 
   let assistant_content = case maybeText of
         Nothing -> Nothing
         Just t -> Just [C.Text {text = t}]
-      tool_calls = Just $ V.fromList . fmap domainToOpenAIToolCall $ fs
+      tool_calls = getToolCalls fs
       name = Nothing
       refusal = Nothing
       assistant_audio = Nothing
    in C.Assistant {assistant_content, name, refusal, assistant_audio, tool_calls}
+  where
+    getToolCalls [] = Nothing
+    getToolCalls as = Just . V.fromList . fmap domainToOpenAIToolCall $ as
 domainToOpenAIMessage (ToolMessage {id = tcId, response = tcResponse}) =
   let content = [C.Text {text = maybe Text.empty (TL.toStrict . encodeToLazyText) tcResponse}]
       tool_call_id = Text.pack tcId
@@ -164,5 +167,5 @@ llmSingleTurnAgentWithToolExecution :: Agent LLMAgentContext Chat
 llmSingleTurnAgentWithToolExecution = do
   resp <- appendOutput llmSingleTurnAgent
   case resp of
-    AssistantMessage {functionCalls = fs@(f : _)} -> sequentialAgent . fmap executeFunctionAgent $ fs
+    AssistantMessage {functionCalls = fs@(_ : _)} -> sequentialAgent . fmap executeFunctionAgent $ fs
     _ -> return resp

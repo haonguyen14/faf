@@ -1,9 +1,10 @@
 -- Language Extensions
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- Module Definition
 module Types
@@ -25,8 +26,8 @@ where
 import Control.Monad.Error.Class (MonadError (catchError, throwError))
 import Control.Monad.IO.Class
 import Control.Monad.State.Class
-import qualified Data.Text as Text
 import Data.Aeson.Types
+import qualified Data.Text as Text
 import OpenAI.V1.Models
 import Servant.Client
 
@@ -55,6 +56,10 @@ type FunctionCallId = String
 -- Session Management
 data Session a = Session {chats :: [Chat], context :: a}
 
+instance Show (Session a) where
+  show :: Session a -> String
+  show = show . chats
+
 -- | A tool that the LLM can use.
 data Tool a b = Tool
   { name :: String,
@@ -78,7 +83,6 @@ data LLMAgentContext = LLMAgentContext
     -- | A list of tools that the LLM can use.
     tools :: [AnyTool]
   }
-
 
 -- Agent Monad
 newtype Agent ctx a = Agent {runAgent :: Session ctx -> IO (Either String (a, Session ctx))}

@@ -7,12 +7,12 @@
 
 module Main where
 
+import Agent (loopAgent)
 import Data.Aeson
 import qualified Data.Text as Text
 import LLM
 import OpenAI.V1
 import qualified System.Environment as Environment
-import Text.Printf (printf)
 import Types
 
 -- This file provides an example of how to use the LLM agent framework.
@@ -45,7 +45,6 @@ instance ToJSON TemperatureOutput where
 getTemperature :: TemperatureInput -> Agent LLMAgentContext TemperatureOutput
 getTemperature (TemperatureInput {zipcode = z}) = do
   -- In a real application, you would call an external API here.
-  liftIO $ printf "--- Tool Execution: Getting temperature for zipcode %s ---\n" z
   return $ TemperatureOutput {temperature = 72, unit = "F"}
 
 -- Now, we define the tool itself.
@@ -81,6 +80,12 @@ temperatureTool =
 
 -- == 2. Running the Agent ==
 
+getUserPrompt :: Agent ctx (Maybe ())
+getUserPrompt = do
+  p <- liftIO getLine
+  modify $ \s -> s {chats = chats s ++ [UserMessage (Text.pack p)]}
+  return Nothing
+
 main :: IO ()
 main = do
   -- First, we set up the environment, including the OpenAI API key and the client.
@@ -88,35 +93,26 @@ main = do
   key <- Environment.getEnv "OPENAI_KEY"
   client <- getClientEnv "https://api.openai.com"
 
-  -- We create the initial session for the agent.
-  let llmSession =
-        Session
-          { -- The session starts with a user message.
-            chats = [UserMessage "Hello, I live in Seattle, 98101. What is the temperature right now?"],
-            -- The context provides the agent with everything it needs to run,
-            -- including the API key, the model to use, and the list of available tools.
-            context =
-              LLMAgentContext
-                { apiKey = key,
-                  clientEnv = client,
-                  openAIModel = "gpt-4o-mini",
-                  systemPrompt = "You are a helpful assistant. Use tools to answer questions.",
-                  tools = [temperatureTool]
-                }
+  let ctx =
+        LLMAgentContext
+          { apiKey = key,
+            clientEnv = client,
+            openAIModel = "gpt-4o-mini",
+            systemPrompt = "You are a helpful assistant. Use tools to answer questions.",
+            tools = [temperatureTool]
           }
 
-  -- We run the agent with the initial session.
-  -- `llmSingleTurnAgentWithToolExecution` will first call the LLM,
-  -- and if the LLM requests a tool, it will execute the tool.
-  putStrLn "\n--- Running LLM Agent with Tool Execution ---"
-  let agent = llmSingleTurnAgentWithToolExecution
-  result <- runAgent agent llmSession
+  let session = Session {chats = [], context = ctx}
 
-  -- Finally, we print the result of the agent's execution.
+  putStrLn "\n--- Running LLM Agent with Tool Execution ---"
+  let agent = loopAgent getUserPrompt llmSingleTurnAgentWithToolExecution
+  result <- runAgent agent session
+
   case result of
-    Left err -> putStrLn $ "Error: " ++ err
-    Right (chat, s) -> do
-      putStrLn "\n--- Agent's Final Response ---"
-      print chat
-      putStrLn "\n--- Full Chat History ---"
-      print (chats s)
+    Left (err, s) -> do
+      putStrLn "-------- Error Message ---------"
+      putStrLn err
+      putStrLn "-------- Current Session ---------"
+      print s
+    Right (_, s) -> do
+      print s

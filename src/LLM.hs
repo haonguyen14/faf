@@ -169,7 +169,9 @@ llmSingleTurnAgentWithToolExecution :: Agent LLMAgentContext Chat
 llmSingleTurnAgentWithToolExecution = do
   resp <- llmSingleTurnAgent
   case resp of
-    AssistantMessage {functionCalls = fs@(_ : _)} -> do
+    assistantMessage@AssistantMessage {functionCalls = fs@(_ : _)} -> do
+      -- we need to persist the tool call into the history before calling them
+      modify $ \s -> s {chats = chats s ++ [assistantMessage]}
       traverse_ (appendOutput . executeFunctionAgent) fs
       llmSingleTurnAgent
     _ -> return resp

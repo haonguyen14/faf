@@ -16,6 +16,7 @@ module Types
     Agent (..),
     Tool (..),
     AnyTool (..),
+    Error,
     module Control.Monad.Error.Class,
     module Control.Monad.State.Class,
     module Control.Monad.IO.Class,
@@ -37,7 +38,6 @@ data Chat
   | UserMessage Text.Text
   | AssistantMessage {text :: Maybe Text.Text, functionCalls :: [FunctionCall]}
   | ToolMessage {id :: FunctionCallId, response :: Maybe Value}
-  deriving (Show)
 
 data FunctionCall = FunctionCall
   { id :: FunctionCallId,
@@ -56,9 +56,18 @@ type FunctionCallId = String
 -- Session Management
 data Session a = Session {chats :: [Chat], context :: a}
 
+instance Show Chat where
+  show (SystemMessage t) = "System: " ++ show t
+  show (UserMessage t) = "User: " ++ show t
+  show AssistantMessage {text = t, functionCalls = fs} = "Assistant: " ++ show t ++ displayFunctionCalls fs
+    where
+      displayFunctionCalls [] = ""
+      displayFunctionCalls as = ". Function Calls: " ++ show as
+  show ToolMessage {id = fcId, response = fcResp} = "Tool id = " ++ fcId ++ " - Tool result: " ++ show fcResp
+
 instance Show (Session a) where
   show :: Session a -> String
-  show = show . chats
+  show = unlines . fmap show . chats
 
 -- | A tool that the LLM can use.
 data Tool a b = Tool
@@ -84,8 +93,10 @@ data LLMAgentContext = LLMAgentContext
     tools :: [AnyTool]
   }
 
+type Error ctx = (String, Session ctx)
+
 -- Agent Monad
-newtype Agent ctx a = Agent {runAgent :: Session ctx -> IO (Either String (a, Session ctx))}
+newtype Agent ctx a = Agent {runAgent :: Session ctx -> IO (Either (Error ctx) (a, Session ctx))}
 
 -- Monad Instances
 instance Functor (Agent ctx) where
@@ -129,11 +140,11 @@ instance MonadState (Session ctx) (Agent ctx) where
   put :: Session ctx -> Agent ctx ()
   put s = Agent $ \_ -> return $ Right ((), s)
 
-instance MonadError String (Agent ctx) where
-  throwError :: String -> Agent ctx a
+instance MonadError (Error ctx) (Agent ctx) where
+  throwError :: Error ctx -> Agent ctx a
   throwError err = Agent $ \_ -> return $ Left err
 
-  catchError :: Agent ctx a -> (String -> Agent ctx a) -> Agent ctx a
+  catchError :: Agent ctx a -> (Error ctx -> Agent ctx a) -> Agent ctx a
   catchError agent _ = agent
 
 instance MonadIO (Agent ctx) where

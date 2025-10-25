@@ -20,6 +20,9 @@ sequentialAgent agents = do
 
 loopAgent :: Agent ctx (Maybe ()) -> Agent ctx Chat -> Agent ctx ()
 loopAgent terminator looper = do
+  s <- get
+  liftIO . print $ s
+
   result <- terminator
   case result of
     Just termSignal -> return termSignal
@@ -33,7 +36,7 @@ repeatAgent :: Agent ctx Chat
 repeatAgent = do
   s <- get
   case chats s of
-    [] -> throwError "Chat history is empty"
+    [] -> throwError ("Chat history is empty", s)
     m : _ -> return m
 
 quitAfterNTerminator :: Int -> Agent ctx (Maybe ())

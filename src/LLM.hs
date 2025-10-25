@@ -18,7 +18,7 @@ import Control.Monad.Except
 import Control.Monad.Trans.Except
 import Data.Aeson
 import Data.Aeson.Text (encodeToLazyText)
-import Data.Foldable (find)
+import Data.Foldable (find, traverse_)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TLE
@@ -143,29 +143,33 @@ makeLLMRequest ctx cs = runExceptT $ do
 -- | An agent that performs a single turn of conversation with the LLM.
 llmSingleTurnAgent :: Agent LLMAgentContext Chat
 llmSingleTurnAgent = do
-  Session {chats, context} <- get
-  result <- liftIO $ makeLLMRequest context chats
-  liftEither result
+  s <- get
+  result <- liftIO $ makeLLMRequest (context s) (chats s)
+  case result of
+    Left err -> throwError (err, s)
+    Right c -> return c
 
 executeFunctionAgent :: FunctionCall -> Agent LLMAgentContext Chat
 executeFunctionAgent FunctionCall {id = fcId, function = f} = do
-  Session {context} <- get
+  s <- get
 
   let FunctionCallParams {name = toolName, arguments = toolArgs} = f
-      toolList = tools context
+      toolList = tools (context s)
 
   case find (\(AnyTool (Tool {name})) -> name == toolName) toolList of
-    Nothing -> throwError $ "Tool not found " ++ toolName
+    Nothing -> throwError ("Tool not found " ++ toolName, s)
     Just (AnyTool Tool {execute}) -> do
       case fromJSON toolArgs of
-        Error err -> throwError $ "Failed to parse arguments for tool " ++ toolName ++ ": " ++ err
+        Error err -> throwError ("Failed to parse arguments for tool " ++ toolName ++ ": " ++ err, s)
         Success args -> do
           result <- execute args
           return $ ToolMessage {id = fcId, response = Just (toJSON result)}
 
 llmSingleTurnAgentWithToolExecution :: Agent LLMAgentContext Chat
 llmSingleTurnAgentWithToolExecution = do
-  resp <- appendOutput llmSingleTurnAgent
+  resp <- llmSingleTurnAgent
   case resp of
-    AssistantMessage {functionCalls = fs@(_ : _)} -> sequentialAgent . fmap executeFunctionAgent $ fs
+    AssistantMessage {functionCalls = fs@(_ : _)} -> do
+      traverse_ (appendOutput . executeFunctionAgent) fs
+      llmSingleTurnAgent
     _ -> return resp

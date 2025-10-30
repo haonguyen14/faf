@@ -145,7 +145,11 @@ instance MonadError (Error ctx) (Agent ctx) where
   throwError err = Agent $ \_ -> return $ Left err
 
   catchError :: Agent ctx a -> (Error ctx -> Agent ctx a) -> Agent ctx a
-  catchError agent _ = agent
+  catchError agent handler = Agent $ \s -> do
+    result <- runAgent agent s
+    case result of
+      Left err -> runAgent (handler err) s
+      Right (a, s') -> return $ Right (a, s')
 
 instance MonadIO (Agent ctx) where
   liftIO :: IO a -> Agent ctx a

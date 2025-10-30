@@ -5,9 +5,11 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | This module provides an example of how to use the LLM agent framework.
+-- It demonstrates how to define a tool, initialize an agent, and run it in a conversational loop.
 module Main where
 
-import Agent (loopAgent)
+import Agent (loopAgent, Streamer (runStreamer))
 import Data.Aeson
 import qualified Data.Text as Text
 import LLM
@@ -42,11 +44,17 @@ instance ToJSON TemperatureOutput where
 -- This is the function that the tool will execute.
 -- It takes the tool's input type and returns the output type within the Agent monad,
 -- allowing it to perform IO and access agent state.
+-- This is the function that the tool will execute.
+-- It takes the tool's input type and returns the output type within the Agent monad,
+-- allowing it to perform IO and access agent state.
 getTemperature :: TemperatureInput -> Agent LLMAgentContext TemperatureOutput
 getTemperature (TemperatureInput {zipcode = z}) = do
   -- In a real application, you would call an external API here.
   return $ TemperatureOutput {temperature = 72, unit = "F"}
 
+-- Now, we define the tool itself.
+-- It includes metadata like name and description, a schema for the expected parameters,
+-- and the actual Haskell function to execute.
 -- Now, we define the tool itself.
 -- It includes metadata like name and description, a schema for the expected parameters,
 -- and the actual Haskell function to execute.
@@ -80,13 +88,26 @@ temperatureTool =
 
 -- == 2. Running the Agent ==
 
+-- | An agent that reads a line of input from the console and adds it to the chat history as a `UserMessage`.
 getUserPrompt :: Agent ctx (Maybe ())
+
 getUserPrompt = do
   p <- liftIO getLine
   modify $ \s -> s {chats = chats s ++ [UserMessage (Text.pack p)]}
   return Nothing
 
+-- | An agent that consumes a stream of `Chat` messages and prints each one to the console.
+printStream :: AgentStream' ctx Chat -> Agent ctx ()
+
+printStream Nil = return ()
+printStream (Cons a as) = do
+  liftIO $ print a
+  rest <- as
+  printStream rest
+
+-- | The main entry point for the application.
 main :: IO ()
+
 main = do
   -- First, we set up the environment, including the OpenAI API key and the client.
   putStrLn "--- Initializing Environment ---"
@@ -104,15 +125,14 @@ main = do
 
   let session = Session {chats = [], context = ctx}
 
-  putStrLn "\n--- Running LLM Agent with Tool Execution ---"
-  let agent = loopAgent getUserPrompt llmSingleTurnAgentWithToolExecution
-  result <- runAgent agent session
+  putStrLn "\n--- Running LLM Agent with loopAgent ---"
+  let agentLoop = loopAgent getUserPrompt llmSingleTurnAgentWithToolExecution
+  let consumeStream = runStreamer agentLoop >>= printStream
+  result <- runAgent consumeStream session
 
   case result of
     Left (err, s) -> do
-      putStrLn "-------- Error Message ---------"
+      putStrLn "Error has occured"
       putStrLn err
-      putStrLn "-------- Current Session ---------"
       print s
-    Right (_, s) -> do
-      print s
+    Right (_, _) -> putStrLn "Finished!!"

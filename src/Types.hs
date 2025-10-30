@@ -14,6 +14,8 @@ module Types
     Session (..),
     LLMAgentContext (..),
     Agent (..),
+    AgentStream (..),
+    AgentStream',
     Tool (..),
     AnyTool (..),
     Error,
@@ -33,27 +35,34 @@ import OpenAI.V1.Models
 import Servant.Client
 
 -- Core Data Types
+
+-- | Represents a single message in a chat conversation.
 data Chat
   = SystemMessage Text.Text
   | UserMessage Text.Text
   | AssistantMessage {text :: Maybe Text.Text, functionCalls :: [FunctionCall]}
   | ToolMessage {id :: FunctionCallId, response :: Maybe Value}
 
+-- | Represents a function call requested by the LLM.
 data FunctionCall = FunctionCall
   { id :: FunctionCallId,
     function :: FunctionCallParams
   }
   deriving (Show)
 
+-- | Represents the parameters of a function call.
 data FunctionCallParams = FunctionCallParams
   { name :: String,
     arguments :: Value
   }
   deriving (Show)
 
+-- | A unique identifier for a function call.
 type FunctionCallId = String
 
 -- Session Management
+
+-- | Holds the state of a conversation session, including the chat history and a generic context.
 data Session a = Session {chats :: [Chat], context :: a}
 
 instance Show Chat where
@@ -69,7 +78,7 @@ instance Show (Session a) where
   show :: Session a -> String
   show = unlines . fmap show . chats
 
--- | A tool that the LLM can use.
+-- | A tool that the LLM can use, with a name, description, parameter schema, and an execution function.
 data Tool a b = Tool
   { name :: String,
     description :: String,
@@ -77,9 +86,10 @@ data Tool a b = Tool
     execute :: a -> Agent LLMAgentContext b
   }
 
+-- | An existentially quantified tool, allowing for lists of tools with different input and output types.
 data AnyTool = forall a b. (FromJSON a, ToJSON b) => AnyTool (Tool a b)
 
--- | The context required for an LLM agent.
+-- | The context required for an LLM agent, including API credentials and configuration.
 data LLMAgentContext = LLMAgentContext
   { -- | The OpenAI model to use.
     openAIModel :: Model,
@@ -93,9 +103,12 @@ data LLMAgentContext = LLMAgentContext
     tools :: [AnyTool]
   }
 
+-- | The error type for agent computations, containing an error message and the session state at the time of the error.
 type Error ctx = (String, Session ctx)
 
 -- Agent Monad
+
+-- | The core monad for agent computations. It manages state (`Session ctx`), handles errors (`Error ctx`), and performs IO.
 newtype Agent ctx a = Agent {runAgent :: Session ctx -> IO (Either (Error ctx) (a, Session ctx))}
 
 -- Monad Instances
@@ -156,3 +169,10 @@ instance MonadIO (Agent ctx) where
   liftIO io = Agent $ \s -> do
     a <- io
     return $ Right (a, s)
+
+-- | A lazy, monadic stream of values of type 'a', where the underlying monad is 'm'.
+-- This is used to represent the sequence of 'Chat' messages produced by an agent over time.
+data AgentStream m a = Nil | Cons a (m (AgentStream m a))
+
+-- | A specialized 'AgentStream' where the underlying monad is 'Agent ctx'.
+type AgentStream' ctx a = AgentStream (Agent ctx) a

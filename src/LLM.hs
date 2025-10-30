@@ -5,6 +5,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | This module handles the interaction with the Large Language Model (LLM).
+-- It includes functions for converting between the project's domain types and the OpenAI library types,
+-- making API requests, and implementing the core logic for tool execution.
 module LLM
   ( llmSingleTurnAgent,
     llmSingleTurnAgentWithToolExecution,
@@ -29,19 +32,21 @@ import qualified OpenAI.V1.Tool as T
 import OpenAI.V1.ToolCall as TC
 import Types
 
--- | Converts a `FunctionCall` to an OpenAI `ToolCall`.
+-- | Converts a domain `FunctionCall` to an OpenAI `ToolCall`.
 domainToOpenAIToolCall :: FunctionCall -> ToolCall
 domainToOpenAIToolCall (FunctionCall {id = callId, function = FunctionCallParams {name = funcName, arguments = funcArgs}}) =
   ToolCall_Function
-    { id = Text.pack callId,
+    {
+      id = Text.pack callId,
       function =
         TC.Function
-          { name = Text.pack funcName,
+          {
+            name = Text.pack funcName,
             arguments = TL.toStrict . encodeToLazyText $ funcArgs
           }
     }
 
--- | Converts a `Chat` to an OpenAI `Message`.
+-- | Converts a domain `Chat` message to an OpenAI `Message`.
 domainToOpenAIMessage :: Chat -> C.Message (V.Vector C.Content)
 domainToOpenAIMessage (SystemMessage m) =
   let content = [C.Text {text = m}]
@@ -68,34 +73,40 @@ domainToOpenAIMessage (ToolMessage {id = tcId, response = tcResponse}) =
       tool_call_id = Text.pack tcId
    in C.Tool {tool_call_id, content}
 
--- | Converts a `Tool` to an OpenAI `Tool`.
+-- | Converts a domain `AnyTool` to an OpenAI `Tool`.
 domainToOpenAITool :: AnyTool -> T.Tool
 domainToOpenAITool (AnyTool (Tool {name, description, parameters})) =
   T.Tool_Function
-    { T.function =
+    {
+      T.function =
         T.Function
-          { T.name = Text.pack name,
+          {
+            T.name = Text.pack name,
             T.description = Just . Text.pack $ description,
             T.parameters = Just parameters,
             T.strict = Just False
           }
     }
 
--- | Converts an OpenAI `ToolCall` to a `FunctionCall`.
+-- | Converts an OpenAI `ToolCall` to a domain `FunctionCall`.
 openAIToDomainToolCall :: ToolCall -> FunctionCall
 openAIToDomainToolCall (ToolCall_Function {id = tcId, function = tcFunction}) =
   FunctionCall
-    { id = Text.unpack tcId,
+    {
+      id = Text.unpack tcId,
       function =
         FunctionCallParams
-          { name = Text.unpack (TC.name tcFunction),
+          {
+            name = Text.unpack (TC.name tcFunction),
             arguments = case eitherDecode . TLE.encodeUtf8 . TL.fromStrict . TC.arguments $ tcFunction of
               Left err -> object ["error" .= err]
               Right val -> val
           }
     }
 
--- | Converts an OpenAI `Message` to a `Chat`.
+-- | Converts an OpenAI `Message` to a domain `Chat`.
+-- Note: This function is partial and will return an error for `Tool` messages from OpenAI,
+-- as they are not expected in the assistant's response.
 openAIMessageToDomainChat :: C.Message Text.Text -> Either String Chat
 openAIMessageToDomainChat (C.System {content}) = Right . SystemMessage $ content
 openAIMessageToDomainChat (C.User {content}) = Right . UserMessage $ content
@@ -106,11 +117,12 @@ openAIMessageToDomainChat (C.Assistant {assistant_content = text, tool_calls}) =
    in Right $ AssistantMessage {text, functionCalls}
 openAIMessageToDomainChat (C.Tool {}) = Left "OpenAI tool response to domain chat not implemented"
 
--- | Creates a chat completion request for the OpenAI API.
+-- | Creates a `CreateChatCompletion` request payload from the agent's context and chat history.
 createChatCompletionRequest :: LLMAgentContext -> [Chat] -> C.CreateChatCompletion
 createChatCompletionRequest ctx cs =
   C._CreateChatCompletion
-    { C.messages = V.fromList $ system : users,
+    {
+      C.messages = V.fromList $ system : users,
       C.tools = case modelTools of
         [] -> Nothing
         ts -> Just . V.fromList $ ts,
@@ -121,7 +133,8 @@ createChatCompletionRequest ctx cs =
     users = fmap domainToOpenAIMessage cs
     modelTools = fmap domainToOpenAITool (tools ctx)
 
--- | Makes a call to the LLM.
+-- | Makes a single chat completion request to the OpenAI API.
+-- It takes the agent context and current chat history, and returns either an error or the assistant's response.
 makeLLMRequest :: LLMAgentContext -> [Chat] -> IO (Either String Chat)
 makeLLMRequest _ [] = return $ Left "No Message"
 makeLLMRequest ctx cs = runExceptT $ do
@@ -140,7 +153,8 @@ makeLLMRequest ctx cs = runExceptT $ do
           message = C.message firstChoice
        in liftEither $ openAIMessageToDomainChat message
 
--- | An agent that performs a single turn of conversation with the LLM.
+-- | An agent that performs a single turn of conversation with the LLM, without any tool execution.
+-- It sends the current chat history and returns the LLM's response.
 llmSingleTurnAgent :: Agent LLMAgentContext Chat
 llmSingleTurnAgent = do
   s <- get
@@ -149,6 +163,9 @@ llmSingleTurnAgent = do
     Left err -> throwError (err, s)
     Right c -> return c
 
+-- | An agent that executes a single function call requested by the LLM.
+-- It finds the corresponding tool, parses the arguments, executes the tool's function,
+-- and returns the result as a `ToolMessage`.
 executeFunctionAgent :: FunctionCall -> Agent LLMAgentContext Chat
 executeFunctionAgent FunctionCall {id = fcId, function = f} = do
   s <- get
@@ -165,6 +182,12 @@ executeFunctionAgent FunctionCall {id = fcId, function = f} = do
           result <- execute args
           return $ ToolMessage {id = fcId, response = Just (toJSON result)}
 
+-- | An agent that performs a single conversational turn with the LLM, including tool execution.
+-- 1. It first calls the LLM.
+-- 2. If the LLM returns a standard message, it returns the message.
+-- 3. If the LLM requests function calls, it appends the request to the chat history,
+--    executes each function, and then calls the LLM *again* with the tool results.
+-- 4. This second LLM call provides the final response for the turn.
 llmSingleTurnAgentWithToolExecution :: Agent LLMAgentContext Chat
 llmSingleTurnAgentWithToolExecution = do
   resp <- llmSingleTurnAgent

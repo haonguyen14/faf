@@ -9,7 +9,7 @@
 -- It demonstrates how to define a tool, initialize an agent, and run it in a conversational loop.
 module Main where
 
-import Agent (loopAgent, Streamer (runStreamer))
+import Agent (loop, Streamer (runStreamer))
 import Data.Aeson
 import qualified Data.Text as Text
 import LLM
@@ -48,7 +48,7 @@ instance ToJSON TemperatureOutput where
 -- It takes the tool's input type and returns the output type within the Agent monad,
 -- allowing it to perform IO and access agent state.
 getTemperature :: TemperatureInput -> Agent LLMAgentContext TemperatureOutput
-getTemperature (TemperatureInput {zipcode = z}) = do
+getTemperature _ = do
   -- In a real application, you would call an external API here.
   return $ TemperatureOutput {temperature = 72, unit = "F"}
 
@@ -126,7 +126,7 @@ main = do
   let session = Session {chats = [], context = ctx}
 
   putStrLn "\n--- Running LLM Agent with loopAgent ---"
-  let agentLoop = loopAgent getUserPrompt llmSingleTurnAgentWithToolExecution
+  let agentLoop = loop getUserPrompt llmSingleTurnAgentWithToolExecution
   let consumeStream = runStreamer agentLoop >>= printStream
   result <- runAgent consumeStream session
 

@@ -29,6 +29,7 @@ import qualified Data.Text.Lazy.Encoding as TLE
 import qualified Data.Vector as V
 import OpenAI.V1
 import qualified OpenAI.V1.Chat.Completions as C
+import qualified OpenAI.V1.ResponseFormat as RF
 import qualified OpenAI.V1.Tool as T
 import OpenAI.V1.ToolCall as TC
 import Types
@@ -112,6 +113,18 @@ openAIMessageToDomainChat (C.Assistant {assistant_content = text, tool_calls}) =
    in Right $ AssistantMessage {text, functionCalls}
 openAIMessageToDomainChat (C.Tool {}) = Left "OpenAI tool response to domain chat not implemented"
 
+domainToOpenAIResponseFormat :: JsonSchemaFormat -> RF.ResponseFormat
+domainToOpenAIResponseFormat JsonSchemaFormat {description, schema} =
+  RF.JSON_Schema
+    { RF.json_schema =
+        RF.JSONSchema
+          { RF.name = "response",
+            RF.description = description,
+            RF.schema = Just schema,
+            RF.strict = Just True
+          }
+    }
+
 -- | Creates a `CreateChatCompletion` request payload from the agent's context and chat history.
 createChatCompletionRequest :: LLMAgentContext -> [Chat] -> C.CreateChatCompletion
 createChatCompletionRequest ctx cs =
@@ -120,7 +133,8 @@ createChatCompletionRequest ctx cs =
       C.tools = case modelTools of
         [] -> Nothing
         ts -> Just . V.fromList $ ts,
-      C.model = openAIModel ctx
+      C.model = openAIModel ctx,
+      C.response_format = fmap domainToOpenAIResponseFormat (responseFormat ctx)
     }
   where
     system = domainToOpenAIMessage . SystemMessage . systemPrompt $ ctx

@@ -5,4 +5,4 @@ packages:
   - .
 
 extra-deps:
-  - openai-2.2.1
+  - openai-2.5.3

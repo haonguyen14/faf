@@ -13,6 +13,7 @@ module Types
     FunctionCallParams (..),
     Session (..),
     LLMAgentContext (..),
+    JsonSchemaFormat (..),
     Agent (..),
     AgentStream (..),
     AgentStream',
@@ -89,6 +90,12 @@ data Tool a b = Tool
 -- | An existentially quantified tool, allowing for lists of tools with different input and output types.
 data AnyTool = forall a b. (FromJSON a, ToJSON b) => AnyTool (Tool a b)
 
+-- | A JSON schema definition for structured output, independent of any LLM provider.
+data JsonSchemaFormat = JsonSchemaFormat
+  { description :: Maybe Text.Text,
+    schema :: Value
+  }
+
 -- | The context required for an LLM agent, including API credentials and configuration.
 data LLMAgentContext = LLMAgentContext
   { -- | The OpenAI model to use.
@@ -100,7 +107,9 @@ data LLMAgentContext = LLMAgentContext
     -- | A system prompt that guides the LLM's behavior.
     systemPrompt :: Text.Text,
     -- | A list of tools that the LLM can use.
-    tools :: [AnyTool]
+    tools :: [AnyTool],
+    -- | Optional structured output schema.
+    responseFormat :: Maybe JsonSchemaFormat
   }
 
 -- | The error type for agent computations, containing an error message and the session state at the time of the error.

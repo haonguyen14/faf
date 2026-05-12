@@ -86,7 +86,31 @@ temperatureTool =
         execute = getTemperature
       }
 
--- == 2. Running the Agent ==
+-- == 2. Defining a Structured Output Schema ==
+
+-- When you want the LLM to return a guaranteed JSON shape, define a JsonSchemaFormat.
+-- The schema field is a standard JSON Schema object (as an Aeson Value).
+-- strict is always enforced, so every field listed in "required" will be present.
+weatherResponseSchema :: JsonSchemaFormat
+weatherResponseSchema =
+  JsonSchemaFormat
+    { description = Just "A structured weather response",
+      schema =
+        object
+          [ "type" .= ("object" :: String),
+            "properties"
+              .= object
+                [ "location" .= object ["type" .= ("string" :: String)],
+                  "temperature" .= object ["type" .= ("number" :: String)],
+                  "unit" .= object ["type" .= ("string" :: String)],
+                  "summary" .= object ["type" .= ("string" :: String)]
+                ],
+            "required" .= (["location", "temperature", "unit", "summary"] :: [String]),
+            "additionalProperties" .= False
+          ]
+    }
+
+-- == 3. Running the Agent ==
 
 -- | An agent that reads a line of input from the console and adds it to the chat history as a `UserMessage`.
 getUserPrompt :: Agent ctx (Maybe ())
@@ -120,7 +144,9 @@ main = do
             clientEnv = client,
             openAIModel = "gpt-4o-mini",
             systemPrompt = "You are a helpful assistant. Use tools to answer questions.",
-            tools = [temperatureTool]
+            tools = [temperatureTool],
+            responseFormat = Just weatherResponseSchema
+            -- set to Nothing to get a plain text response
           }
 
   let session = Session {chats = [], context = ctx}

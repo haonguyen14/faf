@@ -5,12 +5,12 @@
 
 packages:
 - completed:
-    hackage: openai-2.2.1@sha256:e6d6cbc56b35d243bcb437d6228ffbe858c36549fd844a377eccf4988c23ceeb,6689
+    hackage: openai-2.5.3@sha256:f49e80130be0575add87c1d9b47daf81d3733fa7d11c01255eb5c4c91809304c,6912
     pantry-tree:
-      sha256: 01b679a750eef41c022c845c1a5510f45cb2297d96371ff45cf8618d2e1ecae2
-      size: 3720
+      sha256: 106a5e534a1ad9fd34b96c32ba529517e7418d85d3a9e99b89b097973fd77d69
+      size: 3867
   original:
-    hackage: openai-2.2.1
+    hackage: openai-2.5.3
 snapshots:
 - completed:
     sha256: 91dfbdf885fb0110f0e63cdba42e13ff375dc7efc2f69f02d238b31ca3c1064f

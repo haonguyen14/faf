@@ -71,7 +71,7 @@ library
 
     -- Other library packages from which modules are imported.
     build-depends:    
-        base >= 4.17 && < 4.20,
+        base >= 4.17 && < 4.21,
         text >= 2.0.2,
         openai >= 0.1,
         servant-client >= 0.20.3,
@@ -101,7 +101,7 @@ executable faf
 
     -- Other library packages from which modules are imported.
     build-depends:
-        base >= 4.17 && < 4.20,
+        base >= 4.17 && < 4.21,
         text >= 2.0.2,
         openai >= 0.1,
         servant-client >= 0.20.3,

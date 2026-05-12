@@ -2,6 +2,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -36,12 +37,10 @@ import Types
 domainToOpenAIToolCall :: FunctionCall -> ToolCall
 domainToOpenAIToolCall (FunctionCall {id = callId, function = FunctionCallParams {name = funcName, arguments = funcArgs}}) =
   ToolCall_Function
-    {
-      id = Text.pack callId,
+    { id = Text.pack callId,
       function =
         TC.Function
-          {
-            name = Text.pack funcName,
+          { name = Text.pack funcName,
             arguments = TL.toStrict . encodeToLazyText $ funcArgs
           }
     }
@@ -77,11 +76,9 @@ domainToOpenAIMessage (ToolMessage {id = tcId, response = tcResponse}) =
 domainToOpenAITool :: AnyTool -> T.Tool
 domainToOpenAITool (AnyTool (Tool {name, description, parameters})) =
   T.Tool_Function
-    {
-      T.function =
+    { T.function =
         T.Function
-          {
-            T.name = Text.pack name,
+          { T.name = Text.pack name,
             T.description = Just . Text.pack $ description,
             T.parameters = Just parameters,
             T.strict = Just False
@@ -92,12 +89,10 @@ domainToOpenAITool (AnyTool (Tool {name, description, parameters})) =
 openAIToDomainToolCall :: ToolCall -> FunctionCall
 openAIToDomainToolCall (ToolCall_Function {id = tcId, function = tcFunction}) =
   FunctionCall
-    {
-      id = Text.unpack tcId,
+    { id = Text.unpack tcId,
       function =
         FunctionCallParams
-          {
-            name = Text.unpack (TC.name tcFunction),
+          { name = Text.unpack (TC.name tcFunction),
             arguments = case eitherDecode . TLE.encodeUtf8 . TL.fromStrict . TC.arguments $ tcFunction of
               Left err -> object ["error" .= err]
               Right val -> val
@@ -121,8 +116,7 @@ openAIMessageToDomainChat (C.Tool {}) = Left "OpenAI tool response to domain cha
 createChatCompletionRequest :: LLMAgentContext -> [Chat] -> C.CreateChatCompletion
 createChatCompletionRequest ctx cs =
   C._CreateChatCompletion
-    {
-      C.messages = V.fromList $ system : users,
+    { C.messages = V.fromList $ system : users,
       C.tools = case modelTools of
         [] -> Nothing
         ts -> Just . V.fromList $ ts,
@@ -144,7 +138,7 @@ makeLLMRequest ctx cs = runExceptT $ do
 
   choices <- case apiResp of
     Left (e :: SomeException) -> throwE (show e)
-    Right result -> return $ C.choices result
+    Right (result :: C.ChatCompletionObject) -> return result.choices
 
   if V.null choices
     then throwE "No choices returned from LLM"

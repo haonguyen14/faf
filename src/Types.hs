@@ -1,4 +1,5 @@
 -- Language Extensions
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -30,7 +31,9 @@ where
 import Control.Monad.Error.Class (MonadError (catchError, throwError))
 import Control.Monad.IO.Class
 import Control.Monad.State.Class
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Aeson.Types
+import GHC.Generics (Generic)
 import qualified Data.Text as Text
 import OpenAI.V1.Models
 import Servant.Client
@@ -43,20 +46,21 @@ data Chat
   | UserMessage Text.Text
   | AssistantMessage {text :: Maybe Text.Text, functionCalls :: [FunctionCall]}
   | ToolMessage {id :: FunctionCallId, response :: Maybe Value}
+  deriving (Generic, ToJSON, FromJSON)
 
 -- | Represents a function call requested by the LLM.
 data FunctionCall = FunctionCall
   { id :: FunctionCallId,
     function :: FunctionCallParams
   }
-  deriving (Show)
+  deriving (Show, Generic, ToJSON, FromJSON)
 
 -- | Represents the parameters of a function call.
 data FunctionCallParams = FunctionCallParams
   { name :: String,
     arguments :: Value
   }
-  deriving (Show)
+  deriving (Show, Generic, ToJSON, FromJSON)
 
 -- | A unique identifier for a function call.
 type FunctionCallId = String
